@@ -1,151 +1,186 @@
 <template>
-  <section class="space-y-5">
-    <!-- Top controls -->
-    <div class="rounded-2xl bg-white p-4 shadow-sm">
-      <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 class="text-2xl font-extrabold">Flash Deals</h1>
-          <p class="text-sm text-gray-600">Search, filter, and click any item to see details.</p>
+  <section class="space-y-6">
+    <!-- Hero -->
+    <div
+      class="overflow-hidden rounded-3xl bg-gradient-to-r from-pink-200 via-orange-100 to-pink-100 p-6 shadow-sm dark:from-gray-800 dark:via-gray-900 dark:to-gray-800"
+    >
+      <h1 class="text-3xl font-extrabold tracking-tight">Today’s deals</h1>
+      <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">
+        Search, filter by category, sort products, and add to cart.
+      </p>
+    </div>
+
+    <div class="grid gap-6 lg:grid-cols-12">
+      <!-- Sidebar -->
+      <div class="lg:col-span-3 lg:sticky lg:top-28 h-fit">
+        <CategorySidebar
+          :categories="categories"
+          :active="selectedCategory"
+          @select="onSelectCategory"
+        />
+      </div>
+
+      <!-- Main -->
+      <div class="lg:col-span-9 space-y-4">
+        <!-- Controls -->
+        <div
+          class="flex flex-col gap-3 rounded-2xl border bg-white p-4 shadow-sm dark:bg-gray-900 dark:border-gray-800 md:flex-row md:items-center md:justify-between"
+        >
+          <div class="text-sm text-gray-600 dark:text-gray-300">
+            <span v-if="activeLabel"><span class="font-semibold">Showing:</span> {{ activeLabel }}</span>
+            <span v-else>Showing: All products</span>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <label class="text-sm font-semibold">Sort:</label>
+            <select
+              v-model="sortMode"
+              class="rounded-xl border bg-white px-3 py-2 text-sm dark:bg-gray-950 dark:border-gray-800"
+            >
+              <option value="default">Default</option>
+              <option value="price_asc">Price: Low → High</option>
+              <option value="price_desc">Price: High → Low</option>
+              <option value="rating_desc">Rating: High → Low</option>
+            </select>
+
+            <button
+              class="rounded-xl border bg-white px-4 py-2 text-sm font-semibold hover:bg-gray-50 dark:bg-gray-950 dark:border-gray-800 dark:hover:bg-gray-800"
+              type="button"
+              @click="resetAll"
+            >
+              Reset
+            </button>
+          </div>
         </div>
 
-        <div class="flex w-full flex-col gap-2 md:w-auto md:flex-row">
-          <input
-            v-model="searchText"
-            type="text"
-            placeholder="Search products…"
-            class="w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring md:w-72"
-            @keyup.enter="doSearch"
+        <!-- Error -->
+        <div
+          v-if="error"
+          class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+        >
+          {{ error }}
+        </div>
+
+        <!-- Loading -->
+        <div v-if="loading" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div
+            v-for="n in 9"
+            :key="n"
+            class="h-72 animate-pulse rounded-2xl border bg-white dark:bg-gray-900 dark:border-gray-800"
+          ></div>
+        </div>
+
+        <!-- Products -->
+        <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <ProductCard
+            v-for="p in sortedProducts"
+            :key="p.id"
+            :product="p"
+            @add="addToCart"
           />
-          <button
-            class="rounded-xl bg-orange-500 px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-            @click="doSearch"
-          >
-            Search
-          </button>
-          <button
-            class="rounded-xl border bg-white px-4 py-2 text-sm font-semibold hover:bg-gray-50"
-            @click="resetAll"
-          >
-            Reset
-          </button>
         </div>
       </div>
-
-      <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div class="flex items-center gap-2">
-          <span class="text-sm font-semibold">Category</span>
-          <select
-            v-model="selectedCategory"
-            class="rounded-xl border bg-white px-3 py-2 text-sm"
-            @change="filterByCategory"
-          >
-            <option value="">All</option>
-            <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
-          </select>
-        </div>
-
-        <div class="text-sm text-gray-600">
-          <span v-if="loading">Loading…</span>
-          <span v-else>{{ products.length }} items</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Error -->
-    <div v-if="error" class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-      {{ error }}
-    </div>
-
-    <!-- Loading skeletons -->
-    <div v-if="loading" class="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-      <div v-for="n in 8" :key="n" class="h-72 animate-pulse rounded-2xl border bg-white"></div>
-    </div>
-
-    <!-- Product grid -->
-    <div v-else class="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-      <ProductCard v-for="p in products" :key="p.id" :product="p" />
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue"
+import { computed, onMounted, ref, watch } from "vue"
+import CategorySidebar from "../components/CategorySidebar.vue"
 import ProductCard from "../components/ProductCard.vue"
-import type { Product, ProductsResponse } from "../types/product"
+import type { Product } from "../types/product"
+import { getCategories, getProducts, getProductsByCategory, searchProducts } from "../lib/api"
+import type { Category } from "../lib/api"
+import { useCartStore } from "../stores/cart"
+
+const props = defineProps<{ searchQ?: string }>()
+
+const cart = useCartStore()
 
 const products = ref<Product[]>([])
-const categories = ref<string[]>([])
+const categories = ref<Category[]>([])
 const selectedCategory = ref<string>("")
-const searchText = ref<string>("")
-const loading = ref<boolean>(false)
+
+const sortMode = ref<"default" | "price_asc" | "price_desc" | "rating_desc">("default")
+
+const loading = ref(false)
 const error = ref<string | null>(null)
 
-async function safeFetch<T>(url: string): Promise<T> {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`Request failed: ${res.status}`)
-  return (await res.json()) as T
-}
+const activeLabel = computed(() => {
+  if (props.searchQ) return `Search: "${props.searchQ}"`
+  if (selectedCategory.value) return `Category: ${selectedCategory.value}`
+  return ""
+})
 
-async function loadInitial() {
-  loading.value = true
-  error.value = null
+const sortedProducts = computed(() => {
+  const arr = [...products.value]
+  switch (sortMode.value) {
+    case "price_asc":
+      return arr.sort((a, b) => a.price - b.price)
+    case "price_desc":
+      return arr.sort((a, b) => b.price - a.price)
+    case "rating_desc":
+      return arr.sort((a, b) => b.rating - a.rating)
+    default:
+      return arr
+  }
+})
+
+async function loadCategories() {
   try {
-    const [cats, prod] = await Promise.all([
-      safeFetch<string[]>("https://dummyjson.com/products/categories"),
-      safeFetch<ProductsResponse>("https://dummyjson.com/products?limit=40"),
-    ])
-    categories.value = cats
-    products.value = prod.products
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : "Failed to load products"
-  } finally {
-    loading.value = false
+    categories.value = await getCategories()
+  } catch {
+    categories.value = []
   }
 }
 
-async function doSearch() {
-  const q = searchText.value.trim()
-  if (!q) return
+async function loadProducts() {
   loading.value = true
   error.value = null
   try {
-    selectedCategory.value = ""
-    const res = await safeFetch<ProductsResponse>(
-      `https://dummyjson.com/products/search?q=${encodeURIComponent(q)}`
-    )
-    products.value = res.products
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : "Search failed"
-  } finally {
-    loading.value = false
-  }
-}
-
-async function filterByCategory() {
-  loading.value = true
-  error.value = null
-  try {
-    searchText.value = ""
-    if (!selectedCategory.value) {
-      await loadInitial()
-      return
+    if (props.searchQ && props.searchQ.trim()) {
+      selectedCategory.value = ""
+      const res = await searchProducts(props.searchQ.trim())
+      products.value = res.products
+    } else if (selectedCategory.value) {
+      const res = await getProductsByCategory(selectedCategory.value)
+      products.value = res.products
+    } else {
+      const res = await getProducts(24)
+      products.value = res.products
     }
-    const res = await safeFetch<ProductsResponse>(
-      `https://dummyjson.com/products/category/${encodeURIComponent(selectedCategory.value)}`
-    )
-    products.value = res.products
   } catch (e) {
-    error.value = e instanceof Error ? e.message : "Filter failed"
+    error.value = e instanceof Error ? e.message : "Failed to fetch"
   } finally {
     loading.value = false
   }
 }
 
-async function resetAll() {
-  selectedCategory.value = ""
-  searchText.value = ""
-  await loadInitial()
+function onSelectCategory(catSlug: string) {
+  selectedCategory.value = catSlug
+  loadProducts()
 }
 
-onMounted(loadInitial)
+function resetAll() {
+  selectedCategory.value = ""
+  sortMode.value = "default"
+  loadProducts()
+}
+
+function addToCart(p: Product) {
+  cart.add(p, 1)
+}
+
+onMounted(async () => {
+  await loadCategories()
+  await loadProducts()
+})
+
+watch(
+  () => props.searchQ,
+  () => {
+    sortMode.value = "default"
+    loadProducts()
+  }
+)
 </script>
