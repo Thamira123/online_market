@@ -6,43 +6,83 @@ export type Category =
   | string
   | { slug: string; name: string; url?: string }
 
+// -------------------------------
+// Safe fetch helper
+// -------------------------------
 async function safeFetch<T>(url: string): Promise<T> {
   const res = await fetch(url)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`)
+  }
+
   return (await res.json()) as T
 }
 
-// ✅ Categories can be string[] OR object[] (new API format)
+// -------------------------------
+// Get all categories
+// -------------------------------
 export async function getCategories(): Promise<Category[]> {
   const res = await fetch(`${BASE}/products/categories`)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`)
+  }
+
   return (await res.json()) as Category[]
 }
 
-// ✅ Convert category to slug for URL (beauty, furniture, groceries...)
+// -------------------------------
+// Convert category to slug
+// Example: "beauty"
+// -------------------------------
 export function categoryToSlug(c: Category): string {
   return typeof c === "string" ? c : c.slug
 }
 
-// ✅ Convert category to display label (Beauty, Furniture, Groceries...)
+// -------------------------------
+// Convert category to label
+// Example: "Beauty"
+// -------------------------------
 export function categoryToLabel(c: Category): string {
   return typeof c === "string" ? c : c.name
 }
 
+// -------------------------------
+// Get all products
+// -------------------------------
 export function getProducts(limit = 24): Promise<ProductsResponse> {
-  return safeFetch<ProductsResponse>(`${BASE}/products?limit=${limit}`)
+  return safeFetch<ProductsResponse>(
+    `${BASE}/products?limit=${limit}`
+  )
 }
 
+// -------------------------------
+// Search products
+// -------------------------------
 export function searchProducts(q: string): Promise<ProductsResponse> {
-  return safeFetch<ProductsResponse>(`${BASE}/products/search?q=${encodeURIComponent(q)}`)
+  return safeFetch<ProductsResponse>(
+    `${BASE}/products/search?q=${encodeURIComponent(q)}`
+  )
 }
 
-export function getProductsByCategory(categorySlug: string): Promise<ProductsResponse> {
+// -------------------------------
+// Get products by category
+// Example: beauty / laptops
+// -------------------------------
+export function getProductsByCategory(
+  categorySlug: string
+): Promise<ProductsResponse> {
   return safeFetch<ProductsResponse>(
     `${BASE}/products/category/${encodeURIComponent(categorySlug)}`
   )
 }
 
+// -------------------------------
+// Get single product
+// -------------------------------
 export function getProduct(id: string | number): Promise<Product> {
-  return safeFetch<Product>(`${BASE}/products/${id}`)
+  return safeFetch<Product>(
+    `${BASE}/products/${id}`
+  )
 }
