@@ -85,4 +85,18 @@ export function getProduct(id: string | number): Promise<Product> {
   return safeFetch<Product>(
     `${BASE}/products/${id}`
   )
+}export function getProductsPaged(limit = 24, skip = 0): Promise<ProductsResponse> {
+  return safeFetch<ProductsResponse>(`${BASE}/products?limit=${limit}&skip=${skip}`)
+}
+
+export function searchProductsPaged(q: string, limit = 24, skip = 0): Promise<ProductsResponse> {
+  return safeFetch<ProductsResponse>(
+    `${BASE}/products/search?q=${encodeURIComponent(q)}&limit=${limit}&skip=${skip}`
+  )
+}
+
+export function getProductsByCategoryPaged(categorySlug: string, limit = 24, skip = 0): Promise<ProductsResponse> {
+  return safeFetch<ProductsResponse>(
+    `${BASE}/products/category/${encodeURIComponent(categorySlug)}?limit=${limit}&skip=${skip}`
+  )
 }

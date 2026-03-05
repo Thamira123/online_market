@@ -20,3 +20,4 @@ function onSearch(q: string) {
   searchQ.value = q
 }
 </script>
+<RouterView :search-q="searchQ" />

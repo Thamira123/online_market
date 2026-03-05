@@ -1,24 +1,34 @@
 <template>
   <section class="space-y-6">
-    <!-- Banner -->
     <HeroCarousel />
 
-    <!-- Category bar under banner -->
     <CategoryBar
       :categories="categories"
       :active="selectedCategory"
       @select="onSelectCategory"
     />
 
-    <!-- Products section -->
     <div class="mx-auto max-w-7xl space-y-4 px-4">
+      <!-- info / controls -->
       <div
         class="flex flex-col gap-3 rounded-2xl border bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 md:flex-row md:items-center md:justify-between"
       >
         <div class="text-sm text-gray-700 dark:text-gray-200">
           <span class="font-semibold">Showing:</span>
-          <span v-if="selectedCategory" class="ml-1">{{ selectedCategory }}</span>
+
+          <span v-if="searchQValue" class="ml-1">
+            Search: "{{ searchQValue }}"
+          </span>
+
+          <span v-else-if="selectedCategory" class="ml-1">
+            Category: {{ selectedCategory }}
+          </span>
+
           <span v-else class="ml-1">All products</span>
+
+          <span class="ml-2 text-gray-500 dark:text-gray-400">
+            ({{ products.length }} / {{ total }})
+          </span>
         </div>
 
         <div class="flex items-center gap-2">
@@ -51,8 +61,8 @@
         {{ error }}
       </div>
 
-      <!-- loading -->
-      <div v-if="loading" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <!-- loading skeleton -->
+      <div v-if="loading && products.length === 0" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div
           v-for="n in 8"
           :key="n"
@@ -69,12 +79,7 @@
         >
           <RouterLink :to="`/product/${p.id}`" class="block">
             <div class="aspect-[4/3] w-full overflow-hidden bg-gray-100 dark:bg-gray-800">
-              <img
-                :src="p.thumbnail"
-                :alt="p.title"
-                class="h-full w-full object-cover"
-                loading="lazy"
-              />
+              <img :src="p.thumbnail" :alt="p.title" class="h-full w-full object-cover" loading="lazy" />
             </div>
           </RouterLink>
 
@@ -105,9 +110,25 @@
           </div>
         </div>
       </div>
+
+      <!-- Load more -->
+      <div class="flex justify-center py-6">
+        <button
+          v-if="canLoadMore"
+          class="rounded-xl bg-black px-6 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
+          type="button"
+          :disabled="loading"
+          @click="loadMore"
+        >
+          {{ loading ? "Loading..." : "Load More" }}
+        </button>
+
+        <p v-else class="text-sm text-gray-600 dark:text-gray-300">
+          No more products to load.
+        </p>
+      </div>
     </div>
 
-    <!-- Mixed deals section (scroll down more items) -->
     <div class="mx-auto max-w-7xl px-4 pb-10">
       <MixedDeals />
     </div>
@@ -115,7 +136,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue"
+import { computed, onMounted, ref, watch } from "vue"
 import { RouterLink } from "vue-router"
 
 import HeroCarousel from "../components/HeroCarousel.vue"
@@ -124,31 +145,36 @@ import MixedDeals from "../components/MixedDeals.vue"
 
 import type { Product } from "../types/product"
 import type { Category } from "../lib/api"
-import { getCategories, getProducts, getProductsByCategory } from "../lib/api"
+import { getCategories, getProductsPaged, searchProductsPaged, getProductsByCategoryPaged } from "../lib/api"
 import { useCartStore } from "../stores/cart"
 
+const props = defineProps<{ searchQ?: string }>()
 const cart = useCartStore()
 
 const categories = ref<Category[]>([])
 const products = ref<Product[]>([])
-const selectedCategory = ref<string>("")
+
+const selectedCategory = ref("")
+const sortMode = ref<"default" | "price_asc" | "price_desc" | "rating_desc">("default")
 
 const loading = ref(false)
 const error = ref<string | null>(null)
 
-const sortMode = ref<"default" | "price_asc" | "price_desc" | "rating_desc">("default")
+const limit = 24
+const skip = ref(0)
+const total = ref(0)
+
+const searchQValue = computed(() => (props.searchQ ?? "").trim())
+
+const canLoadMore = computed(() => products.value.length < total.value)
 
 const sortedProducts = computed(() => {
   const arr = [...products.value]
   switch (sortMode.value) {
-    case "price_asc":
-      return arr.sort((a, b) => a.price - b.price)
-    case "price_desc":
-      return arr.sort((a, b) => b.price - a.price)
-    case "rating_desc":
-      return arr.sort((a, b) => b.rating - a.rating)
-    default:
-      return arr
+    case "price_asc": return arr.sort((a, b) => a.price - b.price)
+    case "price_desc": return arr.sort((a, b) => b.price - a.price)
+    case "rating_desc": return arr.sort((a, b) => b.rating - a.rating)
+    default: return arr
   }
 })
 
@@ -160,18 +186,50 @@ async function loadCategories() {
   }
 }
 
-async function loadProducts() {
+async function loadFirstPage() {
+  loading.value = true
+  error.value = null
+  skip.value = 0
+
+  try {
+    let res
+    if (searchQValue.value) {
+      selectedCategory.value = ""
+      res = await searchProductsPaged(searchQValue.value, limit, 0)
+    } else if (selectedCategory.value) {
+      res = await getProductsByCategoryPaged(selectedCategory.value, limit, 0)
+    } else {
+      res = await getProductsPaged(limit, 0)
+    }
+
+    products.value = res.products
+    total.value = res.total
+    skip.value = res.skip + res.limit
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : "Failed to fetch"
+  } finally {
+    loading.value = false
+  }
+}
+
+async function loadMore() {
+  if (loading.value || !canLoadMore.value) return
   loading.value = true
   error.value = null
 
   try {
-    if (selectedCategory.value) {
-      const res = await getProductsByCategory(selectedCategory.value)
-      products.value = res.products
+    let res
+    if (searchQValue.value) {
+      res = await searchProductsPaged(searchQValue.value, limit, skip.value)
+    } else if (selectedCategory.value) {
+      res = await getProductsByCategoryPaged(selectedCategory.value, limit, skip.value)
     } else {
-      const res = await getProducts(24)
-      products.value = res.products
+      res = await getProductsPaged(limit, skip.value)
     }
+
+    products.value = [...products.value, ...res.products]
+    total.value = res.total
+    skip.value = res.skip + res.limit
   } catch (e) {
     error.value = e instanceof Error ? e.message : "Failed to fetch"
   } finally {
@@ -182,17 +240,22 @@ async function loadProducts() {
 function onSelectCategory(slug: string) {
   selectedCategory.value = slug
   sortMode.value = "default"
-  loadProducts()
+  loadFirstPage()
 }
 
 function resetAll() {
   selectedCategory.value = ""
   sortMode.value = "default"
-  loadProducts()
+  loadFirstPage()
 }
 
 onMounted(async () => {
   await loadCategories()
-  await loadProducts()
+  await loadFirstPage()
+})
+
+watch(() => props.searchQ, () => {
+  sortMode.value = "default"
+  loadFirstPage()
 })
 </script>
